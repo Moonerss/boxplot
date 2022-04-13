@@ -25,13 +25,16 @@
 #' @param multiple_method the method to compare multiple group
 #' @param multiple_x the p value x position
 #' @param multiple_y the p value y position
+#' @param compare_pairs the compare groups
+#' @param which_pal_scale_obj the object from which_pal_scale
 #' 
+#' @import ggsignif
 
 plot_box <- function(plot_dat, log = TRUE, plot_by_group = FALSE,
                      show_point = FALSE, point_jitter = FALSE,
                      show_outliers = TRUE, show_errorbar = TRUE,
                      xlab = 'Sample', ylab = 'log10(Value+1)',
-                     main = 'Boxplot', theme = 'theme_classic()',
+                     main = 'Boxplot', theme = 'theme_classic',
                      legend_title = 'Group', show_legend = TRUE,
                      legend_in = FALSE, legend_position = 'right',
                      legend_x = NULL, legend_y = NULL,
@@ -39,10 +42,13 @@ plot_box <- function(plot_dat, log = TRUE, plot_by_group = FALSE,
                      legend_title_size = 10, axis_x_font_angle = 0,
                      labs_title_size = 10,
                      y_lim = c(NA, NA),
-                     multiple = F, multiple_method = c('Anova', 'kruskal.test'),
-                     multiple_x = NULL, multiple_y = NULL,
+                     multiple = F, multiple_method = c('anova', 'kruskal.test'),
+                     multiple_x = NA, multiple_y = NA,
                      two_compare = F, two_method = c('wilcox.test', 't.test'),
-                     signf_method = c('p', 'star')) {
+                     signf_method = c('p', 'star'),
+                     compare_pairs = NULL,
+                     which_pal_scale_obj = NULL
+                     ) {
   if (log) {
     plot_dat$value <- log10(plot_dat$value + 1)
   }
@@ -69,6 +75,11 @@ plot_box <- function(plot_dat, log = TRUE, plot_by_group = FALSE,
     p <- p + geom_boxplot()
   }
   
+  ## set fill color
+  if (!is.null(which_pal_scale_obj)) {
+    p <- p + eval(rlang::call2(which_pal_scale_obj[[1]], !!!(which_pal_scale_obj[[2]][[1]])))
+  }
+  
   ## y lim
   if (is.na(y_lim[1])) {
     if (is.na(y_lim[2])) {
@@ -85,12 +96,90 @@ plot_box <- function(plot_dat, log = TRUE, plot_by_group = FALSE,
   }
   
   ## add two compare
+  # if (two_compare) {
+  #   two_method <- match.arg(two_method)
+  #   signf_method <- match.arg(signf_method)
+  #   if (signf_method == 'p') {
+  #     if (plot_by_group == T) {
+  #       compare_list <- combn(unique(plot_dat$Group), 2) %>% t() %>% 
+  #         {split(., rep(1:nrow(.)))}
+  #     } else {
+  #       compare_list <- combn(unique(plot_dat$name), 2) %>% t() %>% 
+  #         {split(., rep(1:nrow(.)))}
+  #     }
+  #     p <- p + geom_signif(
+  #       na.rm = TRUE,
+  #       comparisons = compare_list,
+  #       map_signif_level = function(p) sprintf("p = %.2g", p),
+  #       step_increase = 0.12
+  #     )
+  #   } else {
+  #     if (plot_by_group == T) {
+  #       compare_list <- combn(unique(plot_dat$Group), 2) %>% t() %>% 
+  #         {split(., rep(1:nrow(.)))}
+  #     } else {
+  #       compare_list <- combn(unique(plot_dat$name), 2) %>% t() %>% 
+  #         {split(., rep(1:nrow(.)))}
+  #     }
+  #     p <- p + geom_signif(
+  #       na.rm = TRUE,
+  #       comparisons = compare_list,
+  #       map_signif_level = T,
+  #       step_increase = 0.12
+  #     )
+  #   }
+  # }
+  if (two_compare) {
+    two_method <- match.arg(two_method)
+    signf_method <- match.arg(signf_method)
+    if (signf_method == 'p') {
+      p <- p + geom_signif(
+        na.rm = TRUE,
+        comparisons = compare_pairs,
+        map_signif_level = function(p) sprintf("p = %.2g", p),
+        step_increase = 0.12
+      )
+    } else {
+      p <- p + geom_signif(
+        na.rm = TRUE,
+        comparisons = compare_pairs,
+        map_signif_level = T,
+        step_increase = 0.12
+      )
+    }
+  }
   
+  ## add multiple compare
+  if (multiple) {
+    if (!is.na(multiple_x)) {
+      if (!is.na(multiple_y)) {
+        p <- p + ggpubr::stat_compare_means(method = match.arg(multiple_method),
+                                            label.x = multiple_x, label.y = multiple_y)
+      } else {
+        p <- p + ggpubr::stat_compare_means(method = match.arg(multiple_method),
+                                            label.x = multiple_x)
+      }
+    } else {
+      if (!is.na(multiple_y)) {
+        p <- p + ggpubr::stat_compare_means(method = match.arg(multiple_method),
+                                            label.y = multiple_y)
+      } else {
+        p <- p + ggpubr::stat_compare_means(method = match.arg(multiple_method))
+      }
+    }
+  }
   
   ## add lab
   p <- p + labs(title = main, x = xlab, y = ylab, fill = legend_title)
   ## add theme
-  p <- p + base::eval(rlang::parse_expr(theme))
+  if (grepl("::", x = theme)) {
+    real_theme <- strsplit(x = theme, split = "::")[[1]][2]
+    pkg <- strsplit(x = theme, split = "::")[[1]][1]
+    p <- p + base::eval(call(real_theme), envir = rlang::search_env(rlang::pkg_env_name(pkg)))
+  } else {
+    p <- p + base::eval(call(theme))
+  }
+  
   ## legend
   if (!show_legend) {
     p <- p + theme(legend.position = 'none')
